@@ -1,0 +1,12 @@
+# 虛擬環境與快取
+.venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# 個人遊戲資料（最高分、行為記錄）
+highscore.json
+行為記錄.txt
+行為記錄.jsonl

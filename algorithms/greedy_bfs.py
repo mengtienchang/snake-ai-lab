@@ -1,0 +1,47 @@
+# -*- coding: utf-8 -*-
+"""BFS 貪婪流（原版對照組，決策邏輯保持原封不動）。
+
+最短路＋尾巴安全檢查＋跟尾巴繞。不認識地形代價、體力、藍蘋果 ——
+在體力機制下「跟尾巴等機會」會慢性餓死，這正是要觀察的行為。
+"""
+
+from environment.config import GRID_W, GRID_H, DIRS
+from .pathfind import bfs_path, walk_body, step_toward
+
+
+def auto_next_dir_bfs(game):
+    """回傳 (方向, 模式標籤)；無路可走時方向為 None。"""
+    head = game.snake[0]
+    rocks = game.obstacles
+    body_block = set(game.snake[:-1]) | rocks
+
+    def tail_reachable_after(path):
+        after = walk_body(game.snake, path, grow_at_end=True)
+        blocked = (set(after[:-1]) | rocks) - {after[-1]}
+        return bfs_path(after[0], after[-1], blocked) is not None
+
+    targets = []
+    if game.gold is not None:
+        targets.append((game.gold, game.gold_left, "追金蘋果"))
+    if game.food is not None:
+        targets.append((game.food, None, "追紅蘋果"))
+    for target, ttl, label in targets:
+        path = bfs_path(head, target, body_block)
+        if not path or len(path) < 2:
+            continue
+        if ttl is not None and len(path) - 1 > ttl:
+            continue
+        if tail_reachable_after(path):
+            return step_toward(head, path), label
+
+    tail = game.snake[-1]
+    path = bfs_path(head, tail, set(game.snake[1:-1]) | rocks)
+    if path and len(path) >= 2:
+        return step_toward(head, path), "跟尾巴等機會"
+
+    for d in DIRS:
+        nxt = (head[0] + d[0], head[1] + d[1])
+        if (0 <= nxt[0] < GRID_W and 0 <= nxt[1] < GRID_H
+                and nxt not in body_block):
+            return d, "苟活"
+    return None, "無路可走"
