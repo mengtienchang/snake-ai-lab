@@ -38,7 +38,7 @@ from environment.config import (
     GRID_W, GRID_H, MAX_FPS, ITEM_BLINK, ENERGY_BAR_REF,
     UP, DOWN, LEFT, RIGHT,
 )
-from environment.game import Game
+from environment import Game
 from algorithms import AUTO_ALGOS
 
 # 舊測試腳本的相容匯出（import snake_game as sg 之後照舊能用）
