@@ -6,7 +6,8 @@ __pycache__/
 # macOS
 .DS_Store
 
-# 個人遊戲資料（最高分、行為記錄）
+# 個人遊戲資料（最高分、行為記錄、批量結果）
 highscore.json
 行為記錄.txt
 行為記錄.jsonl
+批量結果.jsonl
