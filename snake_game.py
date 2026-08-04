@@ -12,10 +12,10 @@
 
 操作：
     方向鍵 / WASD      轉向
-    空白鍵 / P         暫停
+    空白鍵 / P（或點上方「暫停」按鈕）  暫停／繼續
     R（或 Enter）      重新開始 —— 用實體按鍵判斷，中文輸入法開著也有效
     T（或點上方按鈕）  自動模式開／關
-    G（或點上方按鈕）  切換演算法：BFS → DIJ → HAM
+    G                  循環切換演算法；點上方「尋路」按鈕開下拉選單直接選
     ESC                離開
 
 行為記錄：行為記錄.txt（人看）＋ 行為記錄.jsonl（程式分析用）
@@ -97,6 +97,15 @@ SCAN_ALGO = pygame.KSCAN_G
 
 AUTO_BTN = pygame.Rect(WIDTH // 2 - 128, 8, 120, 34)
 ALGO_BTN = pygame.Rect(WIDTH // 2 + 2, 8, 126, 34)
+PAUSE_BTN = pygame.Rect(WIDTH // 2 + 138, 8, 56, 34)
+ALGO_OPT_H = 30                    # 下拉選單每列高度
+
+
+def algo_option_rects():
+    """下拉選單各選項的矩形（緊貼在「尋路」按鈕下方）。"""
+    return [pygame.Rect(ALGO_BTN.x, ALGO_BTN.bottom + 4 + i * ALGO_OPT_H,
+                        ALGO_BTN.w, ALGO_OPT_H)
+            for i in range(len(AUTO_ALGOS))]
 
 
 # ---------------------------------------------------------------- 行為記錄
@@ -329,10 +338,20 @@ def draw_bar(screen, game, best, auto, algo_idx, mode_text, font, small):
     algo_name = AUTO_ALGOS[algo_idx][0]
     pygame.draw.rect(screen, (52, 70, 100) if auto else (58, 64, 74),
                      ALGO_BTN, border_radius=8)
-    label = small.render("尋路：%s (G)" % algo_name,
+    label = small.render("尋路：%s ▾" % algo_name,
                          True, TEXT if auto else TEXT_DIM)
     screen.blit(label, (ALGO_BTN.centerx - label.get_width() // 2,
                         ALGO_BTN.centery - label.get_height() // 2))
+
+    # 暫停按鈕（截圖好幫手；空白鍵/P 照舊有效）
+    pygame.draw.rect(screen, (120, 96, 46) if game.paused else (58, 64, 74),
+                     PAUSE_BTN, border_radius=8)
+    if game.paused:
+        pygame.draw.rect(screen, GOLD, PAUSE_BTN, 2, border_radius=8)
+    label = small.render("繼續" if game.paused else "暫停",
+                         True, TEXT if game.paused else TEXT_DIM)
+    screen.blit(label, (PAUSE_BTN.centerx - label.get_width() // 2,
+                        PAUSE_BTN.centery - label.get_height() // 2))
 
     # 體力條：以 ENERGY_BAR_REF 為滿格基準，儲備超過就滿條、看數字
     frac = min(1.0, game.energy / float(ENERGY_BAR_REF))
@@ -351,6 +370,22 @@ def draw_bar(screen, game, best, auto, algo_idx, mode_text, font, small):
     if mode_text:
         mt = small.render("AI：" + mode_text, True, TEXT)
         screen.blit(mt, (bar.x + 8, bar.centery - mt.get_height() // 2 - 1))
+
+
+def draw_algo_menu(screen, algo_idx, small):
+    """「尋路」下拉選單：目前選項打勾，滑鼠掃過的選項亮底。"""
+    mouse = pygame.mouse.get_pos()
+    box = algo_option_rects()[0].unionall(algo_option_rects()[1:]).inflate(0, 8)
+    pygame.draw.rect(screen, (36, 40, 47), box, border_radius=8)
+    pygame.draw.rect(screen, (80, 90, 105), box, 1, border_radius=8)
+    for i, r in enumerate(algo_option_rects()):
+        if r.collidepoint(mouse):
+            pygame.draw.rect(screen, (62, 84, 118), r.inflate(-6, -2),
+                             border_radius=6)
+        mark = "✓ " if i == algo_idx else "　 "
+        label = small.render(mark + AUTO_ALGOS[i][0], True,
+                             TEXT if i == algo_idx else TEXT_DIM)
+        screen.blit(label, (r.x + 12, r.centery - label.get_height() // 2))
 
 
 def draw_center_text(screen, lines, font, small):
@@ -386,6 +421,7 @@ def main():
     best = load_hiscore()
     auto = False
     algo_idx = 0
+    algo_open = False              # 「尋路」下拉選單是否展開
     acc = 0.0
 
     # 行為記錄的狀態
@@ -414,7 +450,18 @@ def main():
                 pygame.quit()
                 return 0
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if AUTO_BTN.collidepoint(event.pos):
+                if algo_open:
+                    # 選單展開中：點到選項就切換，點其他地方只收起選單
+                    algo_open = False
+                    for i, r in enumerate(algo_option_rects()):
+                        if r.collidepoint(event.pos) and i != algo_idx:
+                            algo_idx = i
+                            log_line("[步 %4d] 切換尋路演算法 → %s" % (
+                                game.steps, AUTO_ALGOS[algo_idx][0]),
+                                data={"ev": "algo", "step": game.steps,
+                                      "algo": AUTO_ALGOS[algo_idx][0]})
+                            ai_mode = None
+                elif AUTO_BTN.collidepoint(event.pos):
                     auto = not auto
                     log_line("[步 %4d] %s自動模式（%s）" % (
                         game.steps, "開啟" if auto else "關閉",
@@ -423,12 +470,9 @@ def main():
                               "algo": AUTO_ALGOS[algo_idx][0]})
                     ai_mode = None
                 elif ALGO_BTN.collidepoint(event.pos):
-                    algo_idx = (algo_idx + 1) % len(AUTO_ALGOS)
-                    log_line("[步 %4d] 切換尋路演算法 → %s" % (
-                        game.steps, AUTO_ALGOS[algo_idx][0]),
-                        data={"ev": "algo", "step": game.steps,
-                              "algo": AUTO_ALGOS[algo_idx][0]})
-                    ai_mode = None
+                    algo_open = True
+                elif PAUSE_BTN.collidepoint(event.pos) and game.alive:
+                    game.paused = not game.paused
             if event.type == pygame.KEYDOWN:
                 sc = event.scancode
                 if event.key == pygame.K_ESCAPE:
@@ -444,6 +488,7 @@ def main():
                               "algo": AUTO_ALGOS[algo_idx][0]})
                     ai_mode = None
                 elif sc == SCAN_ALGO:
+                    algo_open = False
                     algo_idx = (algo_idx + 1) % len(AUTO_ALGOS)
                     log_line("[步 %4d] 切換尋路演算法 → %s" % (
                         game.steps, AUTO_ALGOS[algo_idx][0]),
@@ -578,6 +623,9 @@ def main():
                                               game.score, best, newbest), False),
                 ("按 R / Enter / 空白鍵 重新開始，ESC 離開", False),
             ], font, small)
+
+        if algo_open:                  # 下拉選單畫在最上層
+            draw_algo_menu(screen, algo_idx, small)
 
         pygame.display.flip()
 
