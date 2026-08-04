@@ -12,8 +12,12 @@ ENERGY_PANIC = 45      # 體力低於這個值進入「先吃再說」模式
 BLUE_WORTH_LEN = 45    # 蛇長超過這個值，藍蘋果才值得吃
 
 
-def auto_next_dir_dij(game):
-    """回傳 (方向, 模式標籤)；無路可走時方向為 None。"""
+def auto_next_dir_dij(game, path_fn=dijkstra_path):
+    """回傳 (方向, 模式標籤)；無路可走時方向為 None。
+
+    path_fn 可換成同介面的其他 Dijkstra 原語（如 pathfind_lib.lib_dijkstra_path），
+    策略邏輯不變，專門用來對照手寫版與外部庫。
+    """
     head = game.snake[0]
     rocks = game.obstacles
     body_block = set(game.snake[:-1]) | rocks
@@ -22,7 +26,7 @@ def auto_next_dir_dij(game):
     def tail_reachable_after(path):
         after = walk_body(game.snake, path, grow_at_end=True)
         blocked = (set(after[:-1]) | rocks) - {after[-1]}
-        return dijkstra_path(after[0], after[-1], blocked, cost) is not None
+        return path_fn(after[0], after[-1], blocked, cost) is not None
 
     # 目標優先序：蛇太長先考慮藍蘋果減重 → 金蘋果（來得及才追）→ 紅蘋果
     targets = []
@@ -35,7 +39,7 @@ def auto_next_dir_dij(game):
 
     fallback = None    # 體力恐慌時「不做安全檢查也要走」的備案
     for target, ttl, label in targets:
-        path = dijkstra_path(head, target, body_block, cost)
+        path = path_fn(head, target, body_block, cost)
         if not path or len(path) < 2:
             continue
         if ttl is not None and len(path) - 1 > ttl:
@@ -53,7 +57,7 @@ def auto_next_dir_dij(game):
 
     # 跟著尾巴繞（等局面打開）
     tail = game.snake[-1]
-    path = dijkstra_path(head, tail, set(game.snake[1:-1]) | rocks, cost)
+    path = path_fn(head, tail, set(game.snake[1:-1]) | rocks, cost)
     if path and len(path) >= 2:
         return step_toward(head, path), "跟尾巴等機會"
 
