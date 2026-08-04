@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snake AI Lab — 貪吃蛇演算法實驗場</title>
+<style>
+  :root {
+    --bg: #1c2026;        /* 遊戲的 BG_DARK */
+    --board: #2c323a;     /* 棋盤格 */
+    --board-b: #30373f;
+    --surface: #23282f;
+    --head: #6edc82;      /* 蛇頭綠 */
+    --tail: #285f3c;
+    --gold: #f5c850;
+    --food: #e65a50;
+    --blue: #5a96eb;
+    --text: #e6e8eb;
+    --dim: #8c929b;
+    --ring: rgba(230,232,235,.12);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+  .slide {
+    position: absolute; inset: 0; display: none;
+    padding: 7vh 9vw; flex-direction: column; justify-content: center;
+  }
+  .slide.active { display: flex; }
+  .eyebrow {
+    color: var(--head); font-size: .85rem; letter-spacing: .18em;
+    text-transform: uppercase; margin-bottom: 14px;
+  }
+  h1 { font-size: clamp(2rem, 5.2vw, 3.6rem); line-height: 1.25; margin: 0; text-wrap: balance; }
+  h2 { font-size: clamp(1.5rem, 3.4vw, 2.3rem); line-height: 1.35; margin: 0 0 4vh; text-wrap: balance; }
+  p, li { font-size: clamp(1rem, 1.7vw, 1.22rem); line-height: 1.8; }
+  .dim { color: var(--dim); }
+  .gold { color: var(--gold); }
+  .green { color: var(--head); }
+  .red { color: var(--food); }
+  .blue { color: var(--blue); }
+  ul { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 1.2vh; }
+  strong { color: var(--gold); font-weight: 600; }
+
+  .quote {
+    border-left: 4px solid var(--head); padding: 1vh 28px; margin: 3vh 0;
+    font-size: clamp(1.25rem, 2.6vw, 1.8rem); line-height: 1.6;
+  }
+  table {
+    border-collapse: collapse; font-variant-numeric: tabular-nums;
+    font-size: clamp(.85rem, 1.5vw, 1.05rem); margin-top: 1vh;
+  }
+  th, td { padding: 1.2vh 1.6vw; text-align: right; border-bottom: 1px solid var(--ring); }
+  th { color: var(--dim); font-weight: 500; }
+  th:first-child, td:first-child { text-align: left; }
+  .tag {
+    display: inline-block; padding: 2px 12px; border-radius: 99px;
+    border: 1px solid var(--ring); background: var(--surface);
+    font-size: .82em; color: var(--dim); margin-right: 8px;
+  }
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    background: var(--surface); border: 1px solid var(--ring);
+    border-radius: 6px; padding: 1px 8px; font-size: .9em;
+  }
+  .cols { display: flex; gap: 4vw; align-items: center; }
+  .cols > div { flex: 1; min-width: 0; }
+
+  /* 封面像素蛇 */
+  .pixel-snake { display: grid; grid-template-columns: repeat(11, 1fr); gap: 6px;
+                 width: min(320px, 34vw); margin-bottom: 5vh; }
+  .pixel-snake i { aspect-ratio: 1; border-radius: 5px; background: var(--board); }
+  .pixel-snake i.s { background: linear-gradient(135deg, var(--head), var(--tail)); }
+  .pixel-snake i.h { background: var(--head); }
+  .pixel-snake i.f { background: var(--food); border-radius: 50%; }
+
+  .hud {
+    position: fixed; bottom: 22px; right: 28px; color: var(--dim);
+    font-size: .85rem; font-variant-numeric: tabular-nums; user-select: none;
+  }
+  .hint { position: fixed; bottom: 22px; left: 28px; color: var(--dim); font-size: .8rem; }
+  .bar { position: fixed; top: 0; left: 0; height: 3px; background: var(--head); transition: width .25s; }
+  @media (prefers-reduced-motion: reduce) { .bar { transition: none; } }
+  figure { margin: 2vh 0 0; }
+  figure svg { width: 100%; max-width: 760px; height: auto; }
+</style>
+</head>
+<body>
+
+<!-- 1 封面 -->
+<section class="slide active">
+  <div class="pixel-snake" aria-hidden="true"></div>
+  <div class="eyebrow">Snake AI Lab</div>
+  <h1>貪吃蛇演算法實驗場</h1>
+  <p class="dim" style="margin-top:2vh">不只是遊戲——一座用來觀察演算法行為的實驗場<br>
+  pygame ｜ 三種流派 × 外部庫對照 ｜ 並行批量實驗 ｜ 收斂分析</p>
+</section>
+
+<!-- 2 核心問題 -->
+<section class="slide">
+  <div class="eyebrow">核心問題</div>
+  <div class="quote">環境規則改變時，<br>哪一種演算法的<strong>數學保證</strong>還成立？</div>
+  <p class="dim">古典貪吃蛇的必勝解法（漢米爾頓迴路）建立在「等待免費」的世界裡。<br>
+  加入「體力」之後，等待開始扣血——必勝的數學保證，一夜之間變成必死。</p>
+</section>
+
+<!-- 3 環境機制 -->
+<section class="slide">
+  <div class="eyebrow">環境機制</div>
+  <h2>體力就是一條「配速線」</h2>
+  <ul>
+    <li>每走一步 <span class="red">體力 −1</span>，歸零餓死；紅蘋果回補 <span class="green">+30</span></li>
+    <li>意義：<strong>平均 30 步內必須進食一次</strong>——這條線決定哪個流派活得下來</li>
+    <li>更多機制備而不用：碎石地（耗力 ×3）、石頭、傳送門、金／藍蘋果——
+        <code>config.py</code> 一鍵開關，預設乾淨棋盤觀察演算法本體</li>
+  </ul>
+</section>
+
+<!-- 4 五種演算法 -->
+<section class="slide">
+  <div class="eyebrow">參賽者</div>
+  <h2>三個流派，五位選手</h2>
+  <table>
+    <tr><th>選手</th><th style="text-align:left">策略</th><th style="text-align:left">性格</th></tr>
+    <tr><td class="green">BFS</td><td style="text-align:left">最短路＋尾巴安全檢查</td><td style="text-align:left">貪婪流對照組，進食效率最高</td></tr>
+    <tr><td class="green">DIJ</td><td style="text-align:left">按體力代價找路＋恐慌賭路＋減重</td><td style="text-align:left">規則更多——手寫規則的天花板展示</td></tr>
+    <tr><td class="gold">HAM</td><td style="text-align:left">漢米爾頓迴路＋編號捷徑</td><td style="text-align:left">數學上不可能撞到自己</td></tr>
+    <tr><td class="blue">BFS·庫</td><td style="text-align:left">同 BFS，原語換 python-pathfinding</td><td style="text-align:left" rowspan="2">同一套策略層、只換尋路原語<br>——手寫 vs 成熟庫的活體對照</td></tr>
+    <tr><td class="blue">DIJ·庫</td><td style="text-align:left">同 DIJ，原語換 networkx</td></tr>
+  </table>
+  <p class="dim" style="margin-top:2vh">遊戲內下拉選單即時切換；統一介面 <code>fn(game) → (方向, 模式標籤)</code>，新演算法照介面寫好即插即用。</p>
+</section>
+
+<!-- 5 架構 -->
+<section class="slide">
+  <div class="eyebrow">架構</div>
+  <h2>把「規則」從「畫面」裡拆出來</h2>
+  <ul>
+    <li><code>snake_game.py</code>　介面層：畫面、音效、輸入、行為記錄</li>
+    <li><code>environment/</code>　規則本體——<strong>無視窗可跑</strong>，這是一切實驗的地基</li>
+    <li><code>algorithms/</code>　策略層：手寫原語、外部庫原語、三個流派</li>
+  </ul>
+  <p class="dim" style="margin-top:2.5vh">同一份規則，接介面就是遊戲、接迴圈就是批量模擬、接 RL 就是訓練環境。<br>
+  所有行為同步落盤：<code>行為記錄.txt</code>（人讀）＋ <code>行為記錄.jsonl</code>（程式分析）。</p>
+</section>
+
+<!-- 6 手寫 vs 庫 -->
+<section class="slide">
+  <div class="eyebrow">工程驗證</div>
+  <h2>手寫尋路沒寫錯嗎？讓成熟庫當裁判</h2>
+  <ul>
+    <li><strong>差分驗證</strong>：幾百個隨機棋盤上，手寫 BFS/Dijkstra 與
+        python-pathfinding / networkx 的答案必須一致（路徑長度／總代價、「到不了」也要一致）</li>
+    <li><strong>效能</strong>：手寫版快 8~20 倍——庫版每步重建整張圖，這本身就是對照觀察點</li>
+    <li><strong>活體對照</strong>：庫版直接掛進遊戲下拉選單，跑批量看行為是否等價</li>
+  </ul>
+</section>
+
+<!-- 7 批量模式 -->
+<section class="slide">
+  <div class="eyebrow">批量模式</div>
+  <h2>一個問題：跑一局是軼事，跑幾百局才是證據</h2>
+  <ul>
+    <li><code>batch_run.py</code>：無視窗跑整局，<strong>multiprocessing 並行</strong>（10 核跑滿 9 個 worker）</li>
+    <li>第 g 局固定種子 seed+g → 每個演算法拿到<strong>同一批地圖</strong>，同題作答、結果可重現</li>
+    <li>獨立種子不只為公平——它在數學上保住了收斂分析的前提（交叉項歸零）</li>
+    <li>500 局 337 秒；每局明細寫入 <code>批量結果.jsonl</code> 供後續分析</li>
+  </ul>
+</section>
+
+<!-- 8 結果 -->
+<section class="slide">
+  <div class="eyebrow">實驗結果（100 局 × 5，乾淨棋盤）</div>
+  <h2>配速線判了古典流死刑；貪婪流們統計等價</h2>
+  <table>
+    <tr><th>選手</th><th>平均分</th><th>標準差</th><th>結局</th></tr>
+    <tr><td class="green">BFS</td><td>2018</td><td>576</td><td>撞自己 29%｜餓死 71%</td></tr>
+    <tr><td class="green">DIJ</td><td>2093</td><td>721</td><td>撞牆 2%｜撞自己 41%｜餓死 57%</td></tr>
+    <tr><td class="gold">HAM</td><td>446</td><td>118</td><td><strong>餓死 100%</strong></td></tr>
+    <tr><td class="blue">BFS·庫</td><td>2094</td><td>519</td><td>撞自己 30%｜餓死 70%</td></tr>
+    <tr><td class="blue">DIJ·庫</td><td>2095</td><td>556</td><td>撞牆 2%｜撞自己 50%｜餓死 48%</td></tr>
+  </table>
+  <p class="dim" style="margin-top:2vh">配對檢定（同地圖逐局對決）：四個貪婪流變體最大 t 值僅 0.94——差距淹沒在雜訊裡。<br>
+  手寫版＝庫版（差 1~3 分），驗證了原語等價；HAM 標準差極小——不是運氣差，是被<strong>系統性</strong>餓死。</p>
+</section>
+
+<!-- 9 收斂 -->
+<section class="slide">
+  <div class="eyebrow">統計方法</div>
+  <h2>跑幾局才算數？——累積平均圖與樣本數規劃</h2>
+  <div class="cols">
+    <div>
+      <ul>
+        <li>累積平均前段亂晃、後段僵硬：第 n 局只佔 1/n 權重</li>
+        <li>晃動大小 <strong>SE = σ/√n</strong>——乘開括號，交叉項因獨立歸零，只剩 k 個平方項</li>
+        <li>要把平均釘到 ±ε：<strong>k* = (σ/ε)²</strong><br>
+            <span class="dim">σ≈576、ε=±35 → 約 271 局；HAM 的 σ=118 → 12 局就躺平</span></li>
+        <li>「收斂了沒」永遠相對於<strong>你想分辨的差距</strong>而言</li>
+      </ul>
+    </div>
+    <div>
+      <figure>
+        <svg viewBox="0 0 340 200" role="img" aria-label="累積平均曲線收斂進管子的示意圖">
+          <rect x="10" y="78" width="320" height="44" fill="rgba(110,220,130,.12)"/>
+          <line x1="10" y1="100" x2="330" y2="100" stroke="var(--head)" stroke-width="1.4" stroke-dasharray="5 4"/>
+          <path id="pw" fill="none" stroke="var(--text)" stroke-width="2" stroke-linejoin="round"/>
+          <text x="326" y="96" text-anchor="end" font-size="11" fill="var(--head)">m</text>
+          <line x1="175" y1="58" x2="175" y2="142" stroke="var(--gold)" stroke-width="1.2"/>
+          <text x="175" y="160" text-anchor="middle" font-size="11" fill="var(--gold)">k*</text>
+          <text x="12" y="190" font-size="11" fill="var(--dim)">局數 →</text>
+        </svg>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- 10 結語 -->
+<section class="slide">
+  <div class="eyebrow">結語</div>
+  <div class="quote">演算法的優劣不是絕對的——<br><strong>是環境參數在決定誰勝出。</strong></div>
+  <ul>
+    <li>調高 <code>ENERGY_RED</code>：古典流復活；調低：連貪婪流都窒息</li>
+    <li>下一步：打開碎石地形——讓 DIJ 的體力規則回到它設計時面對的世界</li>
+    <li>更遠處：規則本體已可無視窗執行——接上強化學習只差一個訓練迴圈</li>
+  </ul>
+  <p class="dim" style="margin-top:3vh"><span class="tag">repo</span>snake-ai-lab
+     <span class="tag">演示</span>演示.mp4　<span class="tag">推導</span>收斂推導.html</p>
+</section>
+
+<div class="bar" id="bar"></div>
+<div class="hint">← → 或 空白鍵 翻頁</div>
+<div class="hud" id="hud"></div>
+
+<script>
+  // 封面像素蛇：11×5 小棋盤，蛇身 s、蛇頭 h、蘋果 f
+  (function () {
+    const grid = document.querySelector(".pixel-snake");
+    const snake = [12,13,14,15,16,27,38,37,36], head = 36, food = 30;
+    for (let i = 0; i < 55; i++) {
+      const cell = document.createElement("i");
+      if (i === head) cell.className = "h";
+      else if (snake.includes(i)) cell.className = "s";
+      else if (i === food) cell.className = "f";
+      grid.appendChild(cell);
+    }
+  })();
+
+  // 收斂示意曲線（固定偽隨機，1/n 累積平均）
+  (function () {
+    let s = 7, acc = 0;
+    const rnd = () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648 - .5; };
+    const pts = [];
+    for (let n = 1; n <= 90; n++) {
+      acc += rnd() * 2;
+      const y = Math.max(62, Math.min(138, 100 + acc / n * 150));
+      pts.push([10 + (n - 1) / 89 * 320, y]);
+    }
+    document.getElementById("pw").setAttribute("d",
+      pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(""));
+  })();
+
+  // 翻頁
+  const slides = [...document.querySelectorAll(".slide")];
+  let cur = 0;
+  function show(i) {
+    cur = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach((s, j) => s.classList.toggle("active", j === cur));
+    document.getElementById("hud").textContent = (cur + 1) + " / " + slides.length;
+    document.getElementById("bar").style.width = ((cur + 1) / slides.length * 100) + "%";
+  }
+  addEventListener("keydown", e => {
+    if (["ArrowRight", "PageDown", " ", "Enter"].includes(e.key)) { e.preventDefault(); show(cur + 1); }
+    if (["ArrowLeft", "PageUp", "Backspace"].includes(e.key)) { e.preventDefault(); show(cur - 1); }
+    if (e.key === "Home") show(0);
+    if (e.key === "End") show(slides.length - 1);
+  });
+  addEventListener("click", e => {
+    if (e.clientX > innerWidth * 0.7) show(cur + 1);
+    else if (e.clientX < innerWidth * 0.3) show(cur - 1);
+  });
+  show(0);
+</script>
+</body>
+</html>

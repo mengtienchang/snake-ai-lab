@@ -21,15 +21,30 @@ python3 -m venv .venv
 
 macOS 也可以直接雙擊 `啟動貪吃蛇.command`（會自動建環境）。
 
+📽 不想跑就先看 [演示影片](演示.mp4)：自動模式跑分 → 下拉選單切換演算法 → 暫停。
+
+外部套件版演算法（`BFS·庫`／`DIJ·庫`）需要另外裝：
+`.venv/bin/pip install networkx pathfinding`（沒裝會自動略過，遊戲照常能玩）。
+
+批量模式（無視窗跑整局、定量對比演算法）：
+
+```bash
+.venv/bin/python batch_run.py                    # 全部演算法各跑 30 局
+.venv/bin/python batch_run.py --games 100 --algos BFS,DIJ庫
+```
+
+同一個 `--seed` 下每個演算法拿到同一批地圖，結果可重現；
+統計表印在終端，每局明細附加寫入 `批量結果.jsonl`。
+
 ## 操作
 
 | 按鍵 | 功能 |
 |---|---|
 | 方向鍵 / WASD | 轉向 |
-| 空白鍵 / P | 暫停 |
+| 空白鍵 / P | 暫停／繼續（或點上方「暫停」按鈕） |
 | R / Enter | 重新開始 |
 | **T** | 自動模式 開／關 |
-| **G** | 切換演算法：BFS → DIJ → HAM |
+| **G** | 循環切換演算法（或點上方「尋路」按鈕開下拉選單直接選） |
 | ESC | 離開 |
 
 按鍵用實體位置（scancode）判斷，中文輸入法開著也有效。
@@ -41,6 +56,7 @@ macOS 也可以直接雙擊 `啟動貪吃蛇.command`（會自動建環境）。
 | **BFS** | 最短路＋吃完追得到尾巴才走＋跟尾巴等機會 | 貪婪流對照組，進食效率最高 |
 | **DIJ** | 按體力代價找最省的路＋恐慌賭路＋藍蘋果減重 | 規則更多，不一定更強 —— 手寫規則的天花板展示 |
 | **HAM** | 漢米爾頓迴路＋編號捷徑（perturbed Hamiltonian） | 數學上不可能撞到自己；但在體力機制下會餓死 |
+| **BFS·庫 / DIJ·庫** | 同上述策略層，尋路原語換成外部套件（python-pathfinding / networkx） | 手寫 vs 成熟庫的活體對照（`compare_pathfind.py` 是離線版差分驗證） |
 
 畫面上會即時顯示 AI 當下的決策模式（追紅蘋果／跟尾巴等機會／純循環…），
 所有行為同步寫入 `行為記錄.txt`（人讀）與 `行為記錄.jsonl`（程式分析）。
@@ -57,13 +73,16 @@ macOS 也可以直接雙擊 `啟動貪吃蛇.command`（會自動建環境）。
 ## 專案結構
 
 ```
-snake_game.py     入口＋介面層（畫面、音效、輸入、行為記錄）
-environment/      環境機制
-  config.py       所有參數與開關
-  game.py         規則本體（無視窗可跑，可接批量模擬／RL）
-algorithms/       演算法（介面統一：fn(game) -> (方向, 模式標籤)）
-  pathfind.py     BFS / Dijkstra / 前向模擬
-  greedy_bfs.py   greedy_dij.py   hamilton.py
+snake_game.py       入口＋介面層（畫面、音效、輸入、行為記錄）
+batch_run.py        批量模式（無視窗跑整局，演算法定量對比）
+compare_pathfind.py 手寫尋路 vs 外部庫：差分驗證＋效能對比
+environment/        環境機制
+  config.py         所有參數與開關
+  game.py           規則本體（無視窗可跑，批量模擬／RL 都靠它）
+algorithms/         演算法（介面統一：fn(game) -> (方向, 模式標籤)）
+  pathfind.py       手寫 BFS / Dijkstra / 前向模擬
+  pathfind_lib.py   外部庫同介面原語（python-pathfinding / networkx）
+  greedy_bfs.py     greedy_dij.py   hamilton.py
 ```
 
 新演算法照統一介面寫好、加進 `algorithms/__init__.py` 的 `AUTO_ALGOS`，
