@@ -21,6 +21,16 @@ ENABLE_ROCKS = False
 ENABLE_ROUGH = False
 ENABLE_PORTALS = False
 
+# ---- 雙層棋盤 ----
+# 兩片 28×22 疊起來，四個角是電梯：踏上去就到另一層的同位置角格。
+# 動機：對付空間破碎——上層被身體切碎了，就搭電梯繞道下層。
+# 物品只刷在上層；下層不生成任何東西，是純逃生／繞行空間。
+# 手寫原語（BFS/DIJ/A*）已 layer-aware，會自己搭電梯；
+# HAM/嫁接與外部庫版還不支援，雙層模式下自動從名冊剔除。
+# 跑單層的批量對比／舊測試前請把這個開關改回 False。
+ENABLE_LAYERS = True
+ELEVATORS = ((0, 0), (GRID_W - 1, 0), (0, GRID_H - 1), (GRID_W - 1, GRID_H - 1))
+
 # ---- 物件生成節奏 ----
 GOLD_EVERY = 5           # 每吃幾顆紅蘋果出金蘋果
 GOLD_TTL = 45            # 金蘋果存活步數

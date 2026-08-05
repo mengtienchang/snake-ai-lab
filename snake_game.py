@@ -4,11 +4,12 @@
 專案結構：
     snake_game.py    本檔：畫面、音效、輸入、行為記錄、主迴圈（介面層）
     environment/     環境機制
-        config.py    所有可調參數與開關（改遊戲規則來這裡）
+        config.py    所有可調參數與開關（改遊戲規則、開關雙層棋盤來這裡）
         game.py      Game 類 —— 規則本體，可無視窗執行
-    algorithms/           自動模式的演算法（介面統一，按 G 切換對照）
-        pathfind.py  共用尋路工具
-        greedy_bfs.py / greedy_dij.py / hamilton.py
+    algorithms/      自動模式的演算法（介面統一，下拉選單／G 鍵切換對照）
+        pathfind.py  手寫 BFS/Dijkstra/A* ＋ neighbors（雙層鄰接）
+        pathfind_lib.py  外部庫同介面原語
+        greedy_bfs.py / greedy_dij.py / hamilton.py / graft.py
 
 操作：
     方向鍵 / WASD      轉向
@@ -37,6 +38,7 @@ import pygame
 from environment.config import (
     GRID_W, GRID_H, MAX_FPS, ITEM_BLINK, ENERGY_BAR_REF,
     UP, DOWN, LEFT, RIGHT,
+    ENABLE_LAYERS, ELEVATORS,
 )
 from environment import Game
 from algorithms import AUTO_ALGOS
@@ -49,9 +51,18 @@ from algorithms.hamilton import auto_next_dir_ham, HAM_ORDER, HAM_CELLS        #
 
 # ---------------------------------------------------------------- 介面設定
 
-CELL = 24
+CELL = 21 if ENABLE_LAYERS else 24   # 雙層並排時縮小格子，視窗才放得下
 TOP_BAR = 74                       # 上方資訊區（含體力條）
-WIDTH, HEIGHT = GRID_W * CELL, GRID_H * CELL + TOP_BAR
+BOARD_W = GRID_W * CELL
+LAYER_GAP = 20                     # 雙層模式兩片棋盤的中縫
+BOTTOM = 24 if ENABLE_LAYERS else 0  # 下方層標籤列
+if ENABLE_LAYERS:
+    WIDTH = BOARD_W * 2 + LAYER_GAP
+else:
+    WIDTH = BOARD_W
+HEIGHT = GRID_H * CELL + TOP_BAR + BOTTOM
+ELEV_COLOR = (120, 210, 235)
+ELEV_DIM = (60, 110, 125)
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HISCORE_FILE = os.path.join(_BASE_DIR, "highscore.json")
@@ -233,8 +244,11 @@ class Particles(object):
 # ---------------------------------------------------------------- 畫面
 
 def cell_rect(pos):
-    x, y = pos
-    return pygame.Rect(x * CELL, TOP_BAR + y * CELL, CELL, CELL)
+    x, y = pos[0], pos[1]
+    ox = 0
+    if ENABLE_LAYERS and len(pos) > 2 and pos[2] == 1:
+        ox = BOARD_W + LAYER_GAP           # 下層畫在右邊那片
+    return pygame.Rect(ox + x * CELL, TOP_BAR + y * CELL, CELL, CELL)
 
 
 def lerp_color(a, b, t):
@@ -242,18 +256,42 @@ def lerp_color(a, b, t):
 
 
 def draw_board(screen, game):
-    for y in range(GRID_H):
-        for x in range(GRID_W):
-            pos = (x, y)
-            if pos in game.rough:
-                color = ROUGH_A if (x + y) % 2 == 0 else ROUGH_B
-            else:
-                color = BG_A if (x + y) % 2 == 0 else BG_B
-            r = cell_rect(pos)
-            pygame.draw.rect(screen, color, r)
-            if pos in game.rough:      # 碎石斑點
-                pygame.draw.circle(screen, ROUGH_DOT, (r.x + 7, r.y + 8), 2)
-                pygame.draw.circle(screen, ROUGH_DOT, (r.x + 16, r.y + 15), 2)
+    layers = (0, 1) if ENABLE_LAYERS else (None,)
+    for z in layers:
+        for y in range(GRID_H):
+            for x in range(GRID_W):
+                pos = (x, y) if z is None else (x, y, z)
+                if pos in game.rough:
+                    color = ROUGH_A if (x + y) % 2 == 0 else ROUGH_B
+                else:
+                    color = BG_A if (x + y) % 2 == 0 else BG_B
+                r = cell_rect(pos)
+                pygame.draw.rect(screen, color, r)
+                if pos in game.rough:      # 碎石斑點
+                    pygame.draw.circle(screen, ROUGH_DOT, (r.x + 7, r.y + 8), 2)
+                    pygame.draw.circle(screen, ROUGH_DOT, (r.x + 16, r.y + 15), 2)
+
+
+def draw_layers_chrome(screen, small):
+    """雙層模式的框線、層標籤與四角電梯。"""
+    if not ENABLE_LAYERS:
+        return
+    for z, label in ((0, "上層"), (1, "下層")):
+        ox = 0 if z == 0 else BOARD_W + LAYER_GAP
+        txt = small.render(label, True, TEXT_DIM)
+        screen.blit(txt, (ox + BOARD_W // 2 - txt.get_width() // 2,
+                          HEIGHT - BOTTOM + 3))
+        for ex, ey in ELEVATORS:
+            r = cell_rect((ex, ey, z))
+            pygame.draw.rect(screen, (34, 48, 54), r)
+            pygame.draw.rect(screen, ELEV_COLOR, r.inflate(-2, -2), 2,
+                             border_radius=4)
+            cx, cy = r.center
+            q = CELL // 4                      # ▲▼ 上下箭頭
+            pygame.draw.polygon(screen, ELEV_COLOR,
+                                [(cx - q, cy - 1), (cx + q, cy - 1), (cx, cy - q - 2)])
+            pygame.draw.polygon(screen, ELEV_DIM,
+                                [(cx - q, cy + 1), (cx + q, cy + 1), (cx, cy + q + 2)])
 
 
 def draw_portals(screen, game, now_ms):
@@ -281,26 +319,30 @@ def draw_rocks(screen, game):
 
 def draw_snake(screen, game):
     n = max(1, len(game.snake) - 1)
+    pad = max(2, round(CELL / 8))          # 縮邊與圓角隨格子大小等比縮放
+    radius = max(4, round(CELL * 0.29))
     for i, pos in enumerate(reversed(game.snake)):
         idx = len(game.snake) - 1 - i
         color = lerp_color(HEAD_COLOR, TAIL_COLOR, idx / n)
-        pygame.draw.rect(screen, color, cell_rect(pos).inflate(-3, -3),
-                         border_radius=7)
+        pygame.draw.rect(screen, color, cell_rect(pos).inflate(-pad, -pad),
+                         border_radius=radius)
     head = cell_rect(game.snake[0])
     dx, dy = game.direction
     cx, cy = head.center
     off, spread = CELL // 5, CELL // 5
+    eye_r = max(2, round(CELL / 8))
     eyes = ([(cx + dx * off, cy - spread), (cx + dx * off, cy + spread)] if dx
             else [(cx - spread, cy + dy * off), (cx + spread, cy + dy * off)])
     for ex, ey in eyes:
-        pygame.draw.circle(screen, (25, 40, 30), (ex, ey), 3)
+        pygame.draw.circle(screen, (25, 40, 30), (ex, ey), eye_r)
 
 
 def draw_items(screen, game, now_ms):
     if game.food:
         r = cell_rect(game.food)
-        pygame.draw.circle(screen, FOOD, r.center, CELL // 2 - 3)
-        pygame.draw.circle(screen, FOOD_SHINE, (r.centerx - 3, r.centery - 3), 3)
+        s = max(2, round(CELL / 8))
+        pygame.draw.circle(screen, FOOD, r.center, CELL // 2 - s)
+        pygame.draw.circle(screen, FOOD_SHINE, (r.centerx - s, r.centery - s), s)
     pulse = 2 + int(2 * abs(math.sin(now_ms / 200.0)))
     for item, left, main_c, glow in ((game.gold, game.gold_left, GOLD, GOLD_GLOW),
                                      (game.blue, game.blue_left, BLUE, BLUE_GLOW)):
@@ -564,6 +606,15 @@ def main():
                                                         game.snake[0]),
                              data=dict(snap, ev="portal",
                                        to=list(game.snake[0])))
+                elif ev == "elev":
+                    play("portal")
+                    particles.burst(game.snake[0], ELEV_COLOR, 16)
+                    log_line("[步 %4d] 搭電梯 → %s層 %s"
+                             % (game.steps,
+                                "下" if game.snake[0][2] == 1 else "上",
+                                game.snake[0][:2]),
+                             data=dict(snap, ev="elev",
+                                       to=list(game.snake[0])))
                 elif ev == "gold_gone":
                     log_line("[步 %4d] 金蘋果逾時消失" % game.steps,
                              data=dict(snap, ev="expire", kind="gold"))
@@ -600,6 +651,7 @@ def main():
 
         screen.fill(BG_DARK)
         draw_board(screen, game)
+        draw_layers_chrome(screen, small)
         draw_portals(screen, game, now)
         draw_rocks(screen, game)
         draw_items(screen, game, now)

@@ -12,6 +12,7 @@ from .config import (
     GRID_W, GRID_H, DIRS, RIGHT, OPPOSITE,
     START_FPS, MAX_FPS, SPEEDUP_EVERY,
     ENABLE_ROCKS, ENABLE_ROUGH, ENABLE_PORTALS,
+    ENABLE_LAYERS, ELEVATORS,
     GOLD_EVERY, GOLD_TTL, BLUE_EVERY, BLUE_TTL,
     PORTAL_EVERY, PORTAL_TTL, ROCK_EVERY, ROCK_SAFE_DIST,
     ENERGY_START, ENERGY_MAX, ENERGY_RED, ENERGY_GOLD, ENERGY_BLUE,
@@ -27,7 +28,10 @@ class Game(object):
 
     def reset(self):
         cx, cy = GRID_W // 2, GRID_H // 2
-        self.snake = [(cx - i, cy) for i in range(3)]
+        if ENABLE_LAYERS:                       # 雙層：座標帶層號 (x, y, z)
+            self.snake = [(cx - i, cy, 0) for i in range(3)]
+        else:
+            self.snake = [(cx - i, cy) for i in range(3)]
         self.direction = RIGHT
         self.pending = RIGHT
         self.grow = 0
@@ -89,9 +93,18 @@ class Game(object):
     def spawn_empty(self, min_dist_from_head=0):
         head = self.snake[0]
         taken = self.occupied()
-        empty = [(x, y) for x in range(GRID_W) for y in range(GRID_H)
-                 if (x, y) not in taken
-                 and abs(x - head[0]) + abs(y - head[1]) >= min_dist_from_head]
+        if ENABLE_LAYERS:
+            # 物品只刷在上層（z=0），下層是純逃生空間；電梯格保持淨空。
+            # 蛇頭在下層時，上層任何格都視為離頭夠遠。
+            empty = [(x, y, 0)
+                     for x in range(GRID_W) for y in range(GRID_H)
+                     if (x, y, 0) not in taken and (x, y) not in ELEVATORS
+                     and (head[2] != 0
+                          or abs(x - head[0]) + abs(y - head[1]) >= min_dist_from_head)]
+        else:
+            empty = [(x, y) for x in range(GRID_W) for y in range(GRID_H)
+                     if (x, y) not in taken
+                     and abs(x - head[0]) + abs(y - head[1]) >= min_dist_from_head]
         return random.choice(empty) if empty else None
 
     def maybe_spawn_extras(self):
@@ -135,9 +148,12 @@ class Game(object):
         events = []
         self.steps += 1
         self.direction = self.pending
-        hx, hy = self.snake[0]
+        hx, hy = self.snake[0][0], self.snake[0][1]
         dx, dy = self.direction
-        new_head = (hx + dx, hy + dy)
+        if ENABLE_LAYERS:
+            new_head = (hx + dx, hy + dy, self.snake[0][2])
+        else:
+            new_head = (hx + dx, hy + dy)
 
         # 限時物件倒數
         for attr, left_attr, gone in (("gold", "gold_left", "gold_gone"),
@@ -158,6 +174,20 @@ class Game(object):
             return events + self._die("撞牆")
         if new_head in self.obstacles:
             return events + self._die("撞到石頭")
+
+        # 電梯：踏上角格就到另一層的同位置角格（之後照常前進）
+        if ENABLE_LAYERS and (new_head[0], new_head[1]) in ELEVATORS:
+            new_head = (new_head[0], new_head[1], 1 - new_head[2])
+            events.append("elev")
+            # 出電梯自動轉向：直行會出界就掰到唯一合法的垂直出口
+            # （角落只有一個垂直方向在界內，手感像被電梯沿牆彈出去）
+            nx, ny = new_head[0] + dx, new_head[1] + dy
+            if not (0 <= nx < GRID_W and 0 <= ny < GRID_H):
+                for tdx, tdy in ((dy, dx), (-dy, -dx)):
+                    if (0 <= new_head[0] + tdx < GRID_W
+                            and 0 <= new_head[1] + tdy < GRID_H):
+                        self.direction = self.pending = (tdx, tdy)
+                        break
 
         # 傳送門：踏進一邊，從另一邊出來（出口被擋就當普通格子）
         if self.portals and new_head in self.portals:
