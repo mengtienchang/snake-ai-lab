@@ -5,8 +5,7 @@
 蛇太長時考慮吃藍蘋果減重 —— 「環境越複雜、手寫規則越寫不完」的活例子。
 """
 
-from environment.config import GRID_W, GRID_H, DIRS
-from .pathfind import dijkstra_path, path_cost, walk_body, step_toward
+from .pathfind import dijkstra_path, neighbors, path_cost, walk_body, step_toward
 
 ENERGY_PANIC = 45      # 體力低於這個值進入「先吃再說」模式
 BLUE_WORTH_LEN = 45    # 蛇長超過這個值，藍蘋果才值得吃
@@ -61,9 +60,7 @@ def auto_next_dir_dij(game, path_fn=dijkstra_path):
     if path and len(path) >= 2:
         return step_toward(head, path), "跟尾巴等機會"
 
-    for d in DIRS:
-        nxt = (head[0] + d[0], head[1] + d[1])
-        if (0 <= nxt[0] < GRID_W and 0 <= nxt[1] < GRID_H
-                and nxt not in body_block):
-            return d, "苟活"
+    for nxt in neighbors(head):
+        if nxt not in body_block:
+            return step_toward(head, [head, nxt]), "苟活"
     return None, "無路可走"

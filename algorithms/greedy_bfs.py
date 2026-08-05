@@ -5,8 +5,7 @@
 在體力機制下「跟尾巴等機會」會慢性餓死，這正是要觀察的行為。
 """
 
-from environment.config import GRID_W, GRID_H, DIRS
-from .pathfind import bfs_path, walk_body, step_toward
+from .pathfind import bfs_path, neighbors, walk_body, step_toward
 
 
 def auto_next_dir_bfs(game, path_fn=bfs_path):
@@ -43,9 +42,7 @@ def auto_next_dir_bfs(game, path_fn=bfs_path):
     if path and len(path) >= 2:
         return step_toward(head, path), "跟尾巴等機會"
 
-    for d in DIRS:
-        nxt = (head[0] + d[0], head[1] + d[1])
-        if (0 <= nxt[0] < GRID_W and 0 <= nxt[1] < GRID_H
-                and nxt not in body_block):
-            return d, "苟活"
+    for nxt in neighbors(head):
+        if nxt not in body_block:
+            return step_toward(head, [head, nxt]), "苟活"
     return None, "無路可走"
