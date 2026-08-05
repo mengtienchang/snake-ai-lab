@@ -1,5 +1,6 @@
 # 虛擬環境與快取
 .venv/
+.venv-pypy/
 __pycache__/
 *.pyc
 
@@ -11,3 +12,6 @@ highscore.json
 行為記錄.txt
 行為記錄.jsonl
 批量結果.jsonl
+
+# 簡報的轉檔輸出（源頭是 簡報.html）
+*.pptx

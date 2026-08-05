@@ -118,10 +118,27 @@ def main():
     else:
         pool = multiprocessing.Pool(args.jobs)
         stream = pool.imap_unordered(_run_task, tasks)
+    # 邊跑邊落盤：每完成一局立刻 append 一行 jsonl（背景跑也能 tail 看進度）
+    step = max(1, len(tasks) // 20)
+    fh_out = None
+    try:
+        fh_out = open(RESULT_JSONL, "a", encoding="utf-8")
+    except IOError:
+        pass
     for done, (name, row) in enumerate(stream, 1):
         results[name].append(row)
+        if fh_out:
+            fh_out.write(json.dumps(dict(row, algo=name, run=run_id),
+                                    ensure_ascii=False) + "\n")
+            fh_out.flush()
         if sys.stdout.isatty():
             print("進度 %d/%d …" % (done, len(tasks)), end="\r", flush=True)
+        elif done % step == 0 or done == len(tasks):
+            print("進度 %d/%d（%d%%）　耗時 %.0fs" % (
+                done, len(tasks), done * 100 // len(tasks),
+                time.perf_counter() - t0), flush=True)
+    if fh_out:
+        fh_out.close()
     if pool is not None:
         pool.close()
         pool.join()
@@ -135,14 +152,6 @@ def main():
 
     for name, _fn in algos:
         rows = sorted(results[name], key=lambda r: r["seed"])
-        try:
-            with open(RESULT_JSONL, "a", encoding="utf-8") as fh:
-                for r in rows:
-                    fh.write(json.dumps(dict(r, algo=name, run=run_id),
-                                        ensure_ascii=False) + "\n")
-        except IOError:
-            pass
-
         scores = [r["score"] for r in rows]
         dist = []
         for cause in ("通關",) + CAUSES:
